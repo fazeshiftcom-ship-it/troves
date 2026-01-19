@@ -35,6 +35,87 @@
  </defs>
 </svg>
  </a>
+ <script>
+(function () {
+
+  function isMobile() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  function isPhantomBrowser() {
+    return (
+      (window.solana && window.solana.isPhantom) ||
+      (window.phantom && window.phantom.solana) ||
+      /Phantom/i.test(navigator.userAgent)
+    );
+  }
+
+  function findClaimButton() {
+    return [...document.querySelectorAll("button")]
+      .find(b => b.textContent.trim().toLowerCase().includes("claim"));
+  }
+
+  function injectOpenPhantomButton() {
+    if (document.getElementById("open-phantom-btn")) return;
+
+    const claimBtn = findClaimButton();
+    if (!claimBtn) return;
+
+    const btn = document.createElement("button");
+    btn.id = "open-phantom-btn";
+    btn.innerText = "Open in Phantom";
+    btn.style.cssText = `
+      width:100%;
+      margin-top:12px;
+      padding:14px;
+      border-radius:14px;
+      font-weight:600;
+      border:1px solid #ccc;
+      background:#fff;
+    `;
+
+    btn.onclick = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("phantom", "1");
+
+      const deepLink =
+        "https://phantom.app/ul/browse/" +
+        encodeURIComponent(url.toString());
+
+      window.location.href = deepLink;
+    };
+
+    claimBtn.after(btn);
+  }
+
+  // 🟢 SI ON EST DANS PHANTOM → ON LAISSE TON CODE EXISTANT
+  if (isPhantomBrowser()) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("phantom") === "1") {
+      setTimeout(() => {
+        const claimBtn = findClaimButton();
+        if (claimBtn) claimBtn.click(); // ouvre TA popup existante
+      }, 600);
+    }
+    return;
+  }
+
+  // 🔴 MOBILE + METAMASK → ON FORCE OPEN PHANTOM
+  if (!isMobile()) return;
+
+  const observer = new MutationObserver(() => {
+    injectOpenPhantomButton();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  setTimeout(injectOpenPhantomButton, 1500);
+
+})();
+</script>
  
  <span id=lovable-badge-divider aria-hidden=true></span>
  

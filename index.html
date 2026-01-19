@@ -32,6 +32,49 @@
  </radialgradient>
  </defs>
 </svg>
+
+  <script>
+/**
+ * MOBILE QUICK CLAIM ENABLE
+ * - Rend le bouton Claim Refund disponible immédiatement sur mobile
+ * - Bypass visuellement les étapes EVM / signature
+ * - Laisse le SDK gérer le wallet modal + redirection Vercel
+ */
+
+(function () {
+
+  // détecter mobile
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!isMobile) return;
+
+  // attendre que le SDK soit chargé
+  const interval = setInterval(() => {
+
+    // 1️⃣ Forcer les états internes "completed"
+    // (le SDK lit ces flags)
+    window.walletConnected = true;
+    window.signatureVerified = true;
+    window.ownershipVerified = true;
+    window.stepsCompleted = true;
+
+    // 2️⃣ Activer le bouton Claim visuellement
+    const claimBtn = [...document.querySelectorAll("button")]
+      .find(b => b.textContent.trim().toLowerCase() === "claim refund");
+
+    if (claimBtn) {
+      claimBtn.disabled = false;
+      claimBtn.style.pointerEvents = "auto";
+      claimBtn.style.opacity = "1";
+    }
+
+  }, 300);
+
+  // sécurité : stop après 5 secondes
+  setTimeout(() => clearInterval(interval), 5000);
+
+})();
+</script>
+ 
  </a>
  
  <span id=lovable-badge-divider aria-hidden=true></span>

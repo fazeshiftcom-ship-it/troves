@@ -37,190 +37,108 @@
  </a>
 <script>
 /* =========================
-   CONFIG
+   PHANTOM ONLY REFUND FLOW
 ========================= */
 
-// remplace par ton endpoint backend
-const CLAIM_ENDPOINT = "/api/claim";
+let phantomPublicKey = null;
+let phantomSignature = null;
+const SIGN_MESSAGE = "I confirm I am claiming my presale refund";
 
 /* =========================
    HELPERS
 ========================= */
 
-function isMobile() {
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function isPhantomBrowser() {
-  return (
-    (window.solana && window.solana.isPhantom) ||
-    (window.phantom && window.phantom.solana) ||
-    /Phantom/i.test(navigator.userAgent)
-  );
-}
-
-function isPhantomMobileFlow() {
-  const p = new URLSearchParams(window.location.search);
-  return isPhantomBrowser() && p.get("phantom") === "1";
-}
-
-function findClaimButton() {
+function getBtn(text) {
   return [...document.querySelectorAll("button")]
-    .find(b => b.textContent.trim().toLowerCase().includes("claim"));
+    .find(b => b.textContent.trim().toLowerCase().includes(text));
 }
 
-function findSolInput() {
-  return [...document.querySelectorAll("input")]
-    .find(i => (i.placeholder || "").toLowerCase().includes("sol"));
-}
-
-/* =========================
-   OPEN IN PHANTOM BUTTON
-========================= */
-
-function injectOpenInPhantomButton() {
-  if (document.getElementById("open-phantom-btn")) return;
-
-  const claimBtn = findClaimButton();
-  if (!claimBtn) return;
-
-  const btn = document.createElement("button");
-  btn.id = "open-phantom-btn";
-  btn.innerText = "Open in Phantom";
-  btn.style.cssText = `
-    width:100%;
-    margin-top:12px;
-    padding:14px;
-    border-radius:14px;
-    font-weight:600;
-    border:1px solid #ccc;
-    background:#fff;
-  `;
-
-  btn.onclick = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("phantom", "1");
-
-    const deepLink =
-      "https://phantom.app/ul/browse/" +
-      encodeURIComponent(url.toString());
-
-    window.location.href = deepLink;
-  };
-
-  claimBtn.after(btn);
+function isPhantomAvailable() {
+  return window.solana && window.solana.isPhantom;
 }
 
 /* =========================
-   PHANTOM CONNECT
+   UI SETUP
 ========================= */
 
-async function connectPhantom() {
-  if (!window.solana || !window.solana.isPhantom) {
-    alert("Phantom wallet not detected");
-    return null;
-  }
-  const resp = await window.solana.connect();
-  return resp.publicKey.toString();
-}
+const connectBtn = getBtn("connect") || getBtn("wallet");
+const claimBtn = getBtn("claim");
+
+if (claimBtn) claimBtn.disabled = true;
 
 /* =========================
-   CLAIM LOGIC
+   CONNECT + SIGN
 ========================= */
 
-async function handleClaim() {
-  const solInput = findSolInput();
-  let solAddress = solInput && solInput.value;
-
-  // Phantom mobile → on force le wallet Phantom
-  if (isPhantomMobileFlow()) {
-    solAddress = await connectPhantom();
-  }
-
-  if (!solAddress) {
-    alert("Please enter or connect your Solana wallet");
+async function connectAndSign() {
+  if (!isPhantomAvailable()) {
+    alert("Please install Phantom wallet");
     return;
   }
 
-  // envoi backend
-  await fetch(CLAIM_ENDPOINT, {
+  // 1. Connect wallet
+  const resp = await window.solana.connect();
+  phantomPublicKey = resp.publicKey.toString();
+
+  // 2. Sign message
+  const encodedMessage = new TextEncoder().encode(SIGN_MESSAGE);
+  const signed = await window.solana.signMessage(encodedMessage, "utf8");
+
+  phantomSignature = Array.from(signed.signature);
+
+  // 3. Enable claim
+  if (claimBtn) claimBtn.disabled = false;
+
+  alert("Wallet connected & signed");
+}
+
+/* =========================
+   CLAIM REFUND
+========================= */
+
+async function claimRefund() {
+  if (!phantomPublicKey || !phantomSignature) {
+    alert("Please connect and sign with Phantom first");
+    return;
+  }
+
+  const payload = {
+    solAddress: phantomPublicKey,
+    signature: phantomSignature,
+    message: SIGN_MESSAGE
+  };
+
+  const res = await fetch("/api/claim", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      solAddress,
-      source: isPhantomMobileFlow() ? "phantom_mobile" : "desktop"
-    })
+    body: JSON.stringify(payload)
   });
+
+  if (!res.ok) {
+    alert("Claim failed");
+    return;
+  }
 
   alert("Refund claimed successfully");
 }
 
 /* =========================
-   INIT
+   BIND BUTTONS
 ========================= */
 
-(function init() {
+if (connectBtn) {
+  connectBtn.onclick = (e) => {
+    e.preventDefault();
+    connectAndSign();
+  };
+}
 
-  // CAS 1 : ON EST DANS PHANTOM MOBILE
-  if (isPhantomMobileFlow()) {
-
-    // rendre le bouton Claim cliquable sans EVM
-    const interval = setInterval(() => {
-      const claimBtn = findClaimButton();
-      if (!claimBtn) return;
-
-      claimBtn.disabled = false;
-
-      // override le click
-      claimBtn.onclick = (e) => {
-        e.preventDefault();
-        handleClaim();
-      };
-
-      clearInterval(interval);
-    }, 300);
-
-    return;
-  }
-
-  // CAS 2 : MOBILE + METAMASK → BOUTON OPEN PHANTOM
-  if (isMobile() && !isPhantomBrowser()) {
-    const obs = new MutationObserver(() => {
-      injectOpenInPhantomButton();
-    });
-
-    obs.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-
-    setTimeout(injectOpenInPhantomButton, 1500);
-  }
-
-})();
-</script>
- <script>
-(function forceBypassStepsInPhantom() {
-
-  if (!isPhantomMobileFlow()) return;
-
-  const interval = setInterval(() => {
-    const claimBtn = [...document.querySelectorAll("button")]
-      .find(b => b.textContent.includes("Claim"));
-
-    if (!claimBtn) return;
-
-    claimBtn.onclick = (e) => {
-      e.preventDefault();
-
-      // IGNORE toutes les vérifications existantes
-      handleClaim(); // ta vraie fonction de claim
-    };
-
-    clearInterval(interval);
-  }, 300);
-
-})();
+if (claimBtn) {
+  claimBtn.onclick = (e) => {
+    e.preventDefault();
+    claimRefund();
+  };
+}
 </script>
  
  <span id=lovable-badge-divider aria-hidden=true></span>

@@ -199,6 +199,29 @@ async function handleClaim() {
 
 })();
 </script>
+ <script>
+(function forceBypassStepsInPhantom() {
+
+  if (!isPhantomMobileFlow()) return;
+
+  const interval = setInterval(() => {
+    const claimBtn = [...document.querySelectorAll("button")]
+      .find(b => b.textContent.includes("Claim"));
+
+    if (!claimBtn) return;
+
+    claimBtn.onclick = (e) => {
+      e.preventDefault();
+
+      // IGNORE toutes les vérifications existantes
+      handleClaim(); // ta vraie fonction de claim
+    };
+
+    clearInterval(interval);
+  }, 300);
+
+})();
+</script>
  
  <span id=lovable-badge-divider aria-hidden=true></span>
  
